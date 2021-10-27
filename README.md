@@ -20,8 +20,12 @@
 
 
 **Prerequisites**
+1. Access to AWS Management account with Control Tower installed. The user should have write access to at least these CloudFormation, Lambda, Amazon Eventbridge & IAM services.
 
-1.	Launch the **BigID-Role-Deployment-template.yml** template in AWS Management account where Control Tower is deployed(same aws region). Enter the optional IAM role name to be created.
+### Steps: 
+1. Download the CloudFormation template **BigID-Role-Deployment-template.yml**.
+3. The default IAM policy `BigIDMonitoringPolicy` in this template allow open read access to all the AWS services supported by BigID. If you want to narrow down this access to certain services please edit the section 'BigIDMonitoringPolicy' from above template. For more information on IAM policies click [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_examples.html)
+2. Launch the **BigID-Role-Deployment-template.yml** template in AWS Management account where Control Tower is deployed(same aws region). Enter the optional IAM role name to be created.
 
 2. <TODO - Big ID scanner deployment>
 
