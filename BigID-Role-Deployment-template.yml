@@ -215,7 +215,16 @@ Resources:
                   }
                 ]
               }
-              
+
+          BigIDInstanceProfile: 
+            Type: "AWS::IAM::InstanceProfile"
+            Properties: 
+              InstanceProfileName: !Ref RoleName
+              Path: "/"
+              Roles: 
+                - 
+                  Ref: "BigIDMonitoringRole"
+                  
           BigIDMonitoringRole:
             Type: AWS::IAM::Role
             Properties:
