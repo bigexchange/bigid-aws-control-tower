@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: BigID role creation template on life cycle event of AWS Control Tower
+
+# ----------------------------------------------------------------------------------------------------------
+#  CloudFormation Template 1 of 1 - 
+#   
+#   This templates allows newly added Control Tower accounts to be monitored automatically by BigID
+#                                  
+#   This template provisions infrastructure in the AWS Control Tower Management account that allows creation of BigID 
+#   stack instances in Control Tower managed accounts whenever a new Control Tower managed account is added or existing account updated
+
+#  1- Creates a BigID Stackset in the AWS Control Tower Management Account 
+#  2- Provisions a Eventbridge Rule that is triggered based on a Control Tower Lifecycle Event
+#  3- Provisions a Lifecyle Lambda as a target for the Eventbridge Events Rule.
+#    - The Lifecycle Lambda deploys a BigID stack in the newly added/updated Control Tower managed account
+#
+#   -----------------------------------
+
+Parameters:
+
+  BigIDIAMRoleName:
+    Description: 'Enter the name of IAM role to be created for BigID scanners'
+    Type: String
+    Default: BigIDScannerRole
+
+Resources:
+ 
+  CaptureControlTowerLifeCycleEvents:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Capture Control Tower LifeCycle Events and Trigger an Action
+      EventPattern:
+        detail:
+          eventName:
+            - CreateManagedAccount
+            - UpdateManagedAccount
+          eventSource:
+            - controltower.amazonaws.com
+        detail-type:
+          - AWS Service Event via CloudTrail
+        source:
+          - aws.controltower
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt "TriggerCustomizationsOnLifeCycleEvent.Arn"
+          Id: IDCaptureControlTowerLifeCycleEvents
+        
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt "TriggerCustomizationsOnLifeCycleEvent.Arn"
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt "CaptureControlTowerLifeCycleEvents.Arn"
+    
+  LambdaRoleToCaptureEvents:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition: {}
+      Path: /
+      Policies:
+        - PolicyName: inline-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:CreateStackInstances'
+                Resource: !Join [':',['arn:aws:cloudformation', !Ref 'AWS::Region', !Ref 'AWS::AccountId', 'stackset/BigIDScannerIAMRoleStackSet:*']]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole  
+        
+  TriggerCustomizationsOnLifeCycleEvent:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          import logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          result = {"ResponseMetadata":{"HTTPStatusCode":"400"}}
+          
+          def lambda_handler(event, context):
+               
+              masterAcct = event['account']
+              eventDetails = event['detail']
+              regionName = eventDetails['awsRegion']
+              eventName = eventDetails['eventName']
+              srvEventDetails = eventDetails['serviceEventDetails']
+              if eventName == 'CreateManagedAccount' or eventName == 'UpdateManagedAccount':
+                  newAccInfo = {}
+                  logger.info('Event Processed Successfully')
+                  if eventName == 'CreateManagedAccount':
+                      newAccInfo = srvEventDetails['createManagedAccountStatus']
+                  if eventName == 'UpdateManagedAccount':
+                      newAccInfo = srvEventDetails['updateManagedAccountStatus']
+                  cmdStatus = newAccInfo['state']
+                  if cmdStatus == 'SUCCEEDED':
+                      '''Successful event received'''
+                      accId = newAccInfo['account']['accountId']
+                      cloudformation = boto3.client('cloudformation')
+                      try:
+                         result = cloudformation.create_stack_instances(StackSetName='BigIDScannerIAMRoleStackSet', Accounts=[accId], Regions=[regionName],
+                                          ParameterOverrides=[{'ParameterKey': 'RoleName', 'ParameterValue': os.environ['BIGID_ROLE_NAME']}])
+                         logger.info('Stack instance created Successfully')
+                      except Exception as e:
+                         logger.error('Unable to launch Stack instance, REASON: {}'.format(e))
+                  else:
+                      '''Unsuccessful event received'''
+                      logger.info('Unsuccessful Event Received. SKIPPING :{}'.format(event))
+                      return(False)
+              else:
+                  logger.info('Control Tower Event Captured :{}'.format(event))
+      Handler: index.lambda_handler
+      MemorySize: 256
+      Role: !GetAtt "LambdaRoleToCaptureEvents.Arn"
+      Runtime: python3.7
+      Timeout: 60
+      Environment:
+        Variables:
+          BIGID_ROLE_NAME: !Ref BigIDIAMRoleName
+  
+  ############### StackSet for AWS monitoring policy ##########################
+  BigIDStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      Description: StackSet for creating IAM roles for BigID monitoring
+      StackSetName: BigIDScannerIAMRoleStackSet
+      PermissionModel: SELF_MANAGED
+      AdministrationRoleARN: !Join [':', ['arn:aws:iam:', !Ref 'AWS::AccountId', 'role/service-role/AWSControlTowerStackSetRole']]
+      ExecutionRoleName: "AWSControlTowerExecution"
+      Capabilities:
+        - CAPABILITY_NAMED_IAM
+      TemplateBody: |
+        AWSTemplateFormatVersion: "2010-09-09"
+        Description: BigID IAM role for scanners
+        Parameters:
+          RoleName:
+            Description: "IAM role that BigID should use to get monitoring data"
+            Type: String
+            Default: BigIDScannerRole
+        Resources:
+          BigIDMonitoringPolicy:
+            Type: AWS::IAM::ManagedPolicy
+            Properties:
+              ManagedPolicyName: BigIDScannerIAMPolicyV1
+              Description: BigID Monitoring Policy
+              PolicyDocument: {
+                "Version":"2012-10-17",
+                "Statement":[
+                  {
+                    "Sid":"BigIDReadOnlyS3",
+                    "Effect":"Allow",
+                    "Action":[
+                      "s3:ListBucket",
+                      "s3:ListAllMyBuckets",
+                      "s3:GetBucketLocation",
+                      "s3:GetBucketTagging",
+                      "s3:GetObject",
+                      "s3:GetObjectTagging"
+                    ],
+                    "Resource":[
+                      "arn:aws:s3:::*"
+                    ]
+                  },
+                  {
+                    "Sid":"BigIDReadOnlyDynamoDB",
+                    "Effect":"Allow",
+                    "Action":[
+                      "dynamodb:GetItem",
+                      "dynamodb:BatchGetItem",
+                      "dynamodb:Scan",
+                      "dynamodb:Query",
+                      "dynamodb:ConditionCheckItem"
+                    ],
+                    "Resource":[
+                      "arn:aws:dynamodb:::*"
+                    ]
+                  },
+                  {
+                    "Sid":"BigIDReadOnlyRedshift",
+                    "Effect":"Allow",
+                    "Action":[
+                      "redshift:Describe*",
+                      "redshift:FetchResults",
+                      "redshift:ListDatabases",
+                      "redshift:ListSchemas",
+                      "redshift:ListTables"
+                    ],
+                    "Resource":[
+                      "arn:aws:redshift:::*"
+                    ]
+                  },
+                  {
+                    "Sid":"BigIDReadOnlyRDS",
+                    "Effect":"Allow",
+                    "Action":[
+                      "rds:Describe*",
+                      "rds:ListTagsForResource",
+                      "rds:Download*"
+                    ],
+                    "Resource":[
+                      "arn:aws:rds:::*"
+                    ]
+                  }
+                ]
+              }
+              
+          BigIDMonitoringRole:
+            Type: AWS::IAM::Role
+            Properties:
+              RoleName: !Ref RoleName
+              Description: BigID Monitoring Role
+              AssumeRolePolicyDocument: {
+                  "Version": "2012-10-17",
+                  "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "eks.amazonaws.com",
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                }
+              ManagedPolicyArns:
+                - !Ref BigIDMonitoringPolicy
+                
+        Outputs:
+          RoleName:
+            Description: IAM role that BigID should use to get monitoring data
+            Value: !Ref RoleName
+          AccountId:
+            Description: Your Amazon account ID
+            Value: !Ref AWS::AccountId                
