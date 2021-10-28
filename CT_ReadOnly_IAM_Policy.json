@@ -24,7 +24,8 @@
         "dynamodb:BatchGetItem",
         "dynamodb:Scan",
         "dynamodb:Query",
-        "dynamodb:ConditionCheckItem"
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DescribeTable"
       ],
       "Resource":[
         "arn:aws:dynamodb:::*"
