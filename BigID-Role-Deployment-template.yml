@@ -181,7 +181,8 @@ Resources:
                       "dynamodb:BatchGetItem",
                       "dynamodb:Scan",
                       "dynamodb:Query",
-                      "dynamodb:ConditionCheckItem"
+                      "dynamodb:ConditionCheckItem",
+                      "dynamodb:DescribeTable"
                     ],
                     "Resource":[
                       "arn:aws:dynamodb:::*"
@@ -207,10 +208,12 @@ Resources:
                     "Action":[
                       "rds:Describe*",
                       "rds:ListTagsForResource",
-                      "rds:Download*"
+                      "rds:Download*",
+                      "rds-db:connect
                     ],
                     "Resource":[
-                      "arn:aws:rds:::*"
+                      "arn:aws:rds:::*",
+                      "arn:aws:rds-db:::*"
                     ]
                   }
                 ]
