@@ -50,10 +50,12 @@
       "Action":[
         "rds:Describe*",
         "rds:ListTagsForResource",
-        "rds:Download*"
+        "rds:Download*",
+        "rds-db:connect"
       ],
       "Resource":[
-        "arn:aws:rds:::*"
+        "arn:aws:rds:::*",
+        "arn:aws:rds-db:::*"
       ]
     }
   ]
