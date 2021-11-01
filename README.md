@@ -24,10 +24,11 @@
 
 ### Steps: 
 1. Download the CloudFormation template **BigID-Role-Deployment-template.yml**.
-3. The default IAM policy `BigIDMonitoringPolicy` in this template allow open read access to all the AWS services supported by BigID. If you want to narrow down this access to certain services please edit the section 'BigIDMonitoringPolicy' from above template. For more information on IAM policies click [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_examples.html)
-2. Launch the **BigID-Role-Deployment-template.yml** template in AWS Management account where Control Tower is deployed(same aws region). Enter the optional IAM role name to be created.
-
-2. <TODO - Big ID scanner deployment>
+2. The default IAM policy `BigIDMonitoringPolicy` in this template allow open read-only access to all the AWS services supported by BigID. If you want to narrow down this access to certain services please edit the section 'BigIDMonitoringPolicy' from above template. For more information on IAM policies click [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_examples.html)
+3. Launch the **BigID-Role-Deployment-template.yml** template in AWS Management account where Control Tower is deployed(same aws region). Enter the optional IAM role name to be created.
+4. Work with the BigID Services team to install BigID application and Big ID scanners as applicable in your environment (based on your corporate policies, latency needs and sizing estimations). All BigID components are deployed as container images and managed either via Docker-Compose on AWS EC2 OR using a Kubernetees on AWS EKS.
+5. Configure a BigID Scanner (on EC2 or EKS) and ensure they are mapped to the AWS IAM Role created using the template mentioned above (default BigIDScannerRole)
+6. Always use the "IAM Role Authentication" method while creating any AWS data-sources. 
 
 
 **Test** 
@@ -40,4 +41,11 @@ Test by creating a Lifecycle Event and add a managed account:
  	- This can take up to ~20-30 minutes for the account to be successfully created and the AWS Control Tower Lifecycle Event to trigger
  	- Login to the AWS Control Tower managed account - 
  		- Validate that an AWS CloudFormation stack instance has been provisioned that launches the BigID IMA role template in the managed account. 
- 		- < TODO - Big ID data collection test > Follow the step by step instructions in the BigID documentation 
+2. Create an AWS account and configure AWS Data-Sources:
+    - Create an S3 bucket with some files (preferably containing sensitive info like credit-cards, email and/or DOB)
+    - Create a DynamoDB table with data (preferably containing sensitive info like credit-cards, email and/or DOB)
+3. BigID Configuration:
+    - Download and install a BigID (set of docker images) on a EC2 instance
+    - Download and install a BigID Scanner (docker image) on a separate EC2 instance
+    - Map the BigID Scanner to the AWS IAM Role created using the template mentioned above (default BigIDScannerRole)
+    - Add two new AWS data-sources on BigID (one for S3 and one for DynamoDB) and sse the "IAM Role Authentication" method for credentials. 
