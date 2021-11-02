@@ -209,7 +209,7 @@ Resources:
                       "rds:Describe*",
                       "rds:ListTagsForResource",
                       "rds:Download*",
-                      "rds-db:connect
+                      "rds-db:connect"
                     ],
                     "Resource":[
                       "arn:aws:rds:::*",
