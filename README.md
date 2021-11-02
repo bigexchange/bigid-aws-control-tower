@@ -23,12 +23,14 @@
 1. Access to AWS Management account with Control Tower installed. The user should have write access to at least these CloudFormation, Lambda, Amazon Eventbridge & IAM services.
 
 ### Steps: 
-1. Download the CloudFormation template **BigID-Role-Deployment-template.yml**.
-2. The default IAM policy `BigIDMonitoringPolicy` in this template allow open read-only access to all the AWS services supported by BigID. If you want to narrow down this access to certain services please edit the section 'BigIDMonitoringPolicy' from above template. For more information on IAM policies click [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_examples.html)
-3. Launch the **BigID-Role-Deployment-template.yml** template in AWS Management account where Control Tower is deployed(same aws region). Enter the optional IAM role name to be created.
-4. Work with the BigID Services team to install BigID application and Big ID scanners as applicable in your environment (based on your corporate policies, latency needs and sizing estimations). All BigID components are deployed as container images and managed either via Docker-Compose on AWS EC2 OR using a Kubernetees on AWS EKS.
-5. Configure a BigID Scanner (on EC2 or EKS) and ensure they are mapped to the AWS IAM Role created using the template mentioned above (default BigIDScannerRole)
-6. Always use the "IAM Role Authentication" method while creating any AWS data-sources. 
+7. Download the CloudFormation template BigID-Role-Deployment-template.yml
+8. The default IAM policy BigIDMonitoringPolicy in this template allow open read-only access to all the AWS services supported by BigID. If you want to narrow down this access to certain services, please edit the section 'BigIDMonitoringPolicy' from above template. For more information on IAM policies click [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_examples.html)
+9. Launch the BigID-Role-Deployment-template.yml template in AWS Management account where Control Tower is deployed (same AWS region). Enter the optional IAM role name to be created.
+10. Work with the BigID Services team to install BigID application and BigID scanners as applicable in your environment (based on your corporate policies, latency needs and sizing estimations). All BigID components are deployed as container images and managed either via Docker-Compose on AWS EC2 OR using a Kubernetes on AWS EKS.
+11. Configure a BigID Scanner (on EC2 or EKS) and ensure they are mapped to the AWS IAM Role created using the template mentioned above (default BigIDScannerRole)
+12. Always use the "IAM Role Authentication" method while creating any AWS data-sources.
+
+Note: This is just a starter policy, please review it thoroughly with your System-Admin/DevOps team.
 
 
 **Test** 
