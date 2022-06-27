@@ -2,14 +2,16 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: BigID role creation template on life cycle event of AWS Control Tower
 
 # ----------------------------------------------------------------------------------------------------------
-#  CloudFormation Template 1 of 1 - 
-#   
+#  CloudFormation Template 1 of 1 -
+#
 #   This templates allows newly added Control Tower accounts to be monitored automatically by BigID
-#                                  
-#   This template provisions infrastructure in the AWS Control Tower Management account that allows creation of BigID 
+#
+#   This template provisions infrastructure in the AWS Control Tower Management account that allows creation of BigID
 #   stack instances in Control Tower managed accounts whenever a new Control Tower managed account is added or existing account updated
 
-#  1- Creates a BigID Stackset in the AWS Control Tower Management Account 
+#  1- Creates a BigID Stackset in the AWS Control Tower Management Account.
+#    a - if account where the stack is deployed is designated as Scanner account, it will create the scanner role that will assume roles to all other accounts.
+#    b - if account where the stack is deployed is not the scanner account, it will create a role that can be assumed from scanner account.
 #  2- Provisions a Eventbridge Rule that is triggered based on a Control Tower Lifecycle Event
 #  3- Provisions a Lifecyle Lambda as a target for the Eventbridge Events Rule.
 #    - The Lifecycle Lambda deploys a BigID stack in the newly added/updated Control Tower managed account
@@ -18,13 +20,20 @@ Description: BigID role creation template on life cycle event of AWS Control Tow
 
 Parameters:
 
-  BigIDIAMRoleName:
-    Description: 'Enter the name of IAM role to be created for BigID scanners'
+  BigIDRoleName:
+    Description: 'IAM role name that will get created in all accounts except scanner account.'
     Type: String
-    Default: BigIDScannerRole
+    Default: BigID
+  BigIDScannerRoleName:
+    Description: IAM role name for scanner that will get created only in scanner account''
+    Type: String
+    Default: BigIDScanner
+  BigIDScannerAccountID:
+    Description: 'Enter the account number where the cross-account scanners will be deployed.'
+    Type: Number
 
 Resources:
- 
+
   CaptureControlTowerLifeCycleEvents:
     Type: AWS::Events::Rule
     Properties:
@@ -44,7 +53,7 @@ Resources:
       Targets:
         - Arn: !GetAtt "TriggerCustomizationsOnLifeCycleEvent.Arn"
           Id: IDCaptureControlTowerLifeCycleEvents
-        
+
   PermissionForEventsToInvokeLambda:
     Type: AWS::Lambda::Permission
     Properties:
@@ -52,7 +61,7 @@ Resources:
       FunctionName: !GetAtt "TriggerCustomizationsOnLifeCycleEvent.Arn"
       Principal: events.amazonaws.com
       SourceArn: !GetAtt "CaptureControlTowerLifeCycleEvents.Arn"
-    
+
   LambdaRoleToCaptureEvents:
     Type: AWS::IAM::Role
     Properties:
@@ -75,8 +84,8 @@ Resources:
                   - 'cloudformation:CreateStackInstances'
                 Resource: !Join [':',['arn:aws:cloudformation', !Ref 'AWS::Region', !Ref 'AWS::AccountId', 'stackset/BigIDScannerIAMRoleStackSet:*']]
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole  
-        
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
   TriggerCustomizationsOnLifeCycleEvent:
     Type: AWS::Lambda::Function
     Properties:
@@ -89,9 +98,9 @@ Resources:
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
           result = {"ResponseMetadata":{"HTTPStatusCode":"400"}}
-          
+
           def lambda_handler(event, context):
-               
+
               masterAcct = event['account']
               eventDetails = event['detail']
               regionName = eventDetails['awsRegion']
@@ -110,8 +119,7 @@ Resources:
                       accId = newAccInfo['account']['accountId']
                       cloudformation = boto3.client('cloudformation')
                       try:
-                         result = cloudformation.create_stack_instances(StackSetName='BigIDScannerIAMRoleStackSet', Accounts=[accId], Regions=[regionName],
-                                          ParameterOverrides=[{'ParameterKey': 'RoleName', 'ParameterValue': os.environ['BIGID_ROLE_NAME']}])
+                         result = cloudformation.create_stack_instances(StackSetName='BigIDScannerIAMRoleStackSet', Accounts=[accId], Regions=[regionName])
                          logger.info('Stack instance created Successfully')
                       except Exception as e:
                          logger.error('Unable to launch Stack instance, REASON: {}'.format(e))
@@ -126,10 +134,7 @@ Resources:
       Role: !GetAtt "LambdaRoleToCaptureEvents.Arn"
       Runtime: python3.7
       Timeout: 60
-      Environment:
-        Variables:
-          BIGID_ROLE_NAME: !Ref BigIDIAMRoleName
-  
+
   ############### StackSet for AWS monitoring policy ##########################
   BigIDStackSet:
     Type: AWS::CloudFormation::StackSet
@@ -139,6 +144,13 @@ Resources:
       PermissionModel: SELF_MANAGED
       AdministrationRoleARN: !Join [':', ['arn:aws:iam:', !Ref 'AWS::AccountId', 'role/service-role/AWSControlTowerStackSetRole']]
       ExecutionRoleName: "AWSControlTowerExecution"
+      Parameters:
+        - ParameterKey: RoleName
+          ParameterValue: !Ref BigIDRoleName
+        - ParameterKey: ScannerRoleName
+          ParameterValue: !Ref BigIDScannerRoleName
+        - ParameterKey: BigIDScannerAccountID
+          ParameterValue: !Ref BigIDScannerAccountID
       Capabilities:
         - CAPABILITY_NAMED_IAM
       TemplateBody: |
@@ -146,117 +158,110 @@ Resources:
         Description: BigID IAM role for scanners
         Parameters:
           RoleName:
-            Description: "IAM role that BigID should use to get monitoring data"
+            Description: "IAM role name that will get created in all accounts except scanner account"
             Type: String
-            Default: BigIDScannerRole
+            Default: BigID
+          ScannerRoleName:
+            Description: "IAM role name for scanner that will get created only in scanner account"
+            Type: String
+            Default: BigIDScanner
+          BigIDScannerAccountID:
+            Description: 'AccountID for scanner'
+            Type: Number
+        Conditions:
+          IsScannerAccount: !Equals
+            - !Ref BigIDScannerAccountID
+            - !Ref AWS::AccountId
+          IsGenericAccount: !Not
+            - !Condition IsScannerAccount
         Resources:
-          BigIDMonitoringPolicy:
+          BigIDScannerPolicy:
             Type: AWS::IAM::ManagedPolicy
+            Condition: IsScannerAccount
             Properties:
-              ManagedPolicyName: BigIDScannerIAMPolicyV1
-              Description: BigID Monitoring Policy
-              PolicyDocument: {
-                "Version":"2012-10-17",
-                "Statement":[
-                  {
-                    "Sid":"BigIDReadOnlyS3",
-                    "Effect":"Allow",
-                    "Action":[
-                      "s3:ListBucket",
-                      "s3:ListAllMyBuckets",
-                      "s3:GetBucketLocation",
-                      "s3:GetBucketTagging",
-                      "s3:GetObject",
-                      "s3:GetObjectTagging"
-                    ],
-                    "Resource":[
-                      "arn:aws:s3:::*"
-                    ]
-                  },
-                  {
-                    "Sid":"BigIDReadOnlyDynamoDB",
-                    "Effect":"Allow",
-                    "Action":[
-                      "dynamodb:GetItem",
-                      "dynamodb:BatchGetItem",
-                      "dynamodb:Scan",
-                      "dynamodb:Query",
-                      "dynamodb:ConditionCheckItem",
-                      "dynamodb:DescribeTable"
-                    ],
-                    "Resource":[
-                      "arn:aws:dynamodb:::*"
-                    ]
-                  },
-                  {
-                    "Sid":"BigIDReadOnlyRedshift",
-                    "Effect":"Allow",
-                    "Action":[
-                      "redshift:Describe*",
-                      "redshift:FetchResults",
-                      "redshift:ListDatabases",
-                      "redshift:ListSchemas",
-                      "redshift:ListTables"
-                    ],
-                    "Resource":[
-                      "arn:aws:redshift:::*"
-                    ]
-                  },
-                  {
-                    "Sid":"BigIDReadOnlyRDS",
-                    "Effect":"Allow",
-                    "Action":[
-                      "rds:Describe*",
-                      "rds:ListTagsForResource",
-                      "rds:Download*",
-                      "rds-db:connect"
-                    ],
-                    "Resource":[
-                      "arn:aws:rds:::*",
-                      "arn:aws:rds-db:::*"
-                    ]
-                  }
-                ]
-              }
-
-          BigIDInstanceProfile: 
-            Type: "AWS::IAM::InstanceProfile"
-            Properties: 
-              InstanceProfileName: !Ref RoleName
-              Path: "/"
-              Roles: 
-                - 
-                  Ref: "BigIDMonitoringRole"
-                  
-          BigIDMonitoringRole:
+              Description: BigID scanner policy to assume roles.
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    Effect: Allow
+                    Action:
+                      - sts:AssumeRole
+                    Resource:
+                      - !Join [ "/", ["arn:aws:iam::*:role", !Ref RoleName ] ]
+          BigIDScannerRole:
             Type: AWS::IAM::Role
+            Condition: IsScannerAccount
+            Properties:
+              Description: BigID Scanner Role
+              RoleName: !Ref ScannerRoleName
+              AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                - Effect: Allow
+                  Principal:
+                    Service :
+                      - eks.amazonaws.com
+                      - ec2.amazonaws.com
+                  Action: 'sts:AssumeRole'
+              ManagedPolicyArns:
+                - !Ref BigIDScannerPolicy
+          BigIDScannerInstanceProfile:
+            Type: "AWS::IAM::InstanceProfile"
+            Condition: IsScannerAccount
+            Properties:
+              InstanceProfileName: !Ref ScannerRoleName
+              Path: "/"
+              Roles:
+              - !Ref BigIDScannerRole
+          BigIDPolicy:
+            Type: AWS::IAM::ManagedPolicy
+            Condition: IsGenericAccount
+            Properties:
+              Description: BigID Monitoring Policy
+              PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                  - Sid: BigIDReadOnlyS3
+                    Effect: Allow
+                    Action:
+                      - "s3:List*"
+                      - "s3:Get*"
+                    Resource:
+                      - "arn:aws:s3:::*"
+                  - Sid: BigIDReadOnlyDynamoDB
+                    Effect: Allow
+                    Action:
+                      - dynamodb:GetItem
+                      - dynamodb:BatchGetItem
+                      - dynamodb:Scan
+                      - dynamodb:Query
+                      - dynamodb:ConditionCheckItem
+                      - dynamodb:DescribeTable
+                    Resource:
+                      - "arn:aws:dynamodb:::*"
+          BigIDRole:
+            Type: AWS::IAM::Role
+            Condition: IsGenericAccount
             Properties:
               RoleName: !Ref RoleName
-              Description: BigID Monitoring Role
-              AssumeRolePolicyDocument: {
-                  "Version": "2012-10-17",
-                  "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {
-                                "Service": [
-                                    "eks.amazonaws.com",
-                                    "ec2.amazonaws.com"
-                                ]
-                            },
-                            "Action": [
-                                "sts:AssumeRole"
-                            ]
-                        }
-                    ]
-                }
+              Description: BigID Role
+              AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                - Effect: Allow
+                  Principal:
+                    AWS : !Join [":", ["arn:aws:iam:", !Ref BigIDScannerAccountID, "root"]]
+                    Service :
+                      - eks.amazonaws.com
+                      - ec2.amazonaws.com
+                  Action: 'sts:AssumeRole'
               ManagedPolicyArns:
-                - !Ref BigIDMonitoringPolicy
-                
-        Outputs:
-          RoleName:
-            Description: IAM role that BigID should use to get monitoring data
-            Value: !Ref RoleName
-          AccountId:
-            Description: Your Amazon account ID
-            Value: !Ref AWS::AccountId                
+                - !Ref BigIDPolicy
+          BigIDInstanceProfile:
+            Type: "AWS::IAM::InstanceProfile"
+            Condition: IsGenericAccount
+            Properties:
+              Path: "/"
+              InstanceProfileName: !Ref RoleName
+              Roles:
+              - !Ref BigIDRole
