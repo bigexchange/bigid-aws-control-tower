@@ -1,4 +1,3 @@
-
 # Automate BigID IAM role deployment in AWS accounts under AWS Control Tower
 
 AWS Control Tower Lifecyle Integration with BigID - Allow new or updated AWS accounts in an AWS Control Tower to be automatically deployed with IAM roles. This role can be:
@@ -12,6 +11,9 @@ Centralized scanning is preferable as it reduces the number of scanners to deplo
 
 * If you deploy an account-local scanner, use the BigID role name (as declared) in template parameters and attach it to your remote scanner. The role name must be available in all accounts
 * If you deploy an cross-account scanner, you need to provide a specific accountID as the template parameter and deploy it there.
+
+## Cross account scanning example
+![](./assets/centralized%20scanning%20with%20AWS%20%2B%20BigID.png)
 
 ## How it Works
 
